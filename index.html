@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Gamedev Canvas Workshop</title>
+    <style>
+      canvas {
+        background: gray;
+        display: block;
+        margin: 0 auto;
+      }
+
+      #timeRange {
+        display: block;
+        margin: 0 auto;
+        width: 1000px;
+      }
+
+      #a_max {
+        display: block;
+        margin: 0 auto;
+        width: 500px;
+      }
+
+      fieldset {
+        margin: 0 auto;
+        width: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="myCanvas" width="1000" height="1000"></canvas>
+    <br />
+    <input type="checkbox" id="animateTrajectory" checked />
+    <input type="range" id="timeRange" value="0" min="0" max="1000" step="1" />
+    <br />
+    <input type="range" id="a_max" value="1" min="1" max="200" step="1" />
+    <div>
+      <fieldset>
+        <legend>Experiments</legend>
+
+        <input type="radio" id="basic-exp" name="experiment" value="basic" />
+        <label for="basic-exp">Basic</label>
+
+        <input
+          type="radio"
+          id="better-exp"
+          name="experiment"
+          value="better"
+          checked
+        />
+        <label for="better-exp">Better</label>
+
+
+
+        <input
+          type="radio"
+          id="move-exp"
+          name="experiment"
+          value="move"
+          checked
+        />
+        <label for="move-exp">Move</label>
+      </fieldset>
+    </div>
+
+    <script>
+      const vel_scale = 25;
+      let canvas = document.getElementById("myCanvas");
+      let animateTrajectory = document.getElementById("animateTrajectory");
+      let timeRange = document.getElementById("timeRange");
+      let aMaxRange = document.getElementById("a_max");
+      let radios = document.getElementsByName("experiment");
+      console.log(radios);
+      let ctx = canvas.getContext("2d");
+
+      let click_pos = new Vec2(100, 500);
+      let drag = false
+      canvas.addEventListener("mousedown", function (event) {
+        drag = true;
+        click_pos = new Vec2(event.pageX - canvas.offsetLeft, event.pageY - canvas.offsetTop);
+        render();
+      });
+      canvas.addEventListener("mousemove", function (event) {
+        if (drag) {
+          click_pos = new Vec2(event.pageX - canvas.offsetLeft, event.pageY - canvas.offsetTop);
+          render();
+        }
+      });
+      canvas.addEventListener("mouseup", function (event) {
+        drag = false;
+      });
+
+      function getExperiment() {
+        for (let i = 0; i < radios.length; i++) {
+          if (radios[i].checked) {
+            return radios[i].value;
+          }
+        }
+      }
+
+      function getTime() {
+        return timeRange.value / 1000;
+      }
+
+      function getAMax() {
+        return aMaxRange.value / 100;
+      }
+
+      function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.beginPath();
+
+        let experiment = getExperiment();
+        console.log(experiment);
+        switch (experiment) {
+          case "basic":
+            exp1();
+            break;
+          case "better":
+            exp2();
+            break;
+          case "move":
+            exp3();
+            break;
+        }
+
+        renderLine(p_start, click_pos, "green");
+      }
+
+      let animationInterval = null;
+      function animate() {
+        if (animateTrajectory.checked) {
+          animationInterval = setInterval(() => {
+            timeRange.value = (parseInt(timeRange.value) + 5) % 1000;
+            render();
+          }, 1000 / 60);
+        } else {
+          clearInterval(animationInterval);
+        }
+      }
+      animateTrajectory.onclick = animate;
+      animate();
+
+      function Vec2(x, y) {
+        this.x = x;
+        this.y = y;
+      }
+
+      Vec2.prototype.add = function (v) {
+        return new Vec2(this.x + v.x, this.y + v.y);
+      };
+      Vec2.prototype.sub = function (v) {
+        return new Vec2(this.x - v.x, this.y - v.y);
+      };
+      Vec2.prototype.mul = function (s) {
+        return new Vec2(this.x * s, this.y * s);
+      };
+      Vec2.prototype.div = function (s) {
+        return new Vec2(this.x / s, this.y / s);
+      };
+      Vec2.prototype.length = function () {
+        return Math.sqrt(this.x * this.x + this.y * this.y);
+      };
+      Vec2.prototype.norm = function () {
+        return this.div(this.length());
+      };
+      Vec2.prototype.normOrZero = function () {
+        const l = this.length();
+        if (l == 0) {
+          return Vec2.zero;
+        }
+        return this.div(l);
+      };
+      Vec2.prototype.dot = function (v) {
+        return this.x * v.x + this.y * v.y;
+      };
+      Vec2.prototype.cross = function (v) {
+        return this.x * v.y - this.y * v.x;
+      };
+      Vec2.zero = new Vec2(0, 0);
+
+      function renderCircle(p, color) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2, false);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.closePath();
+      }
+
+      function renderPointLine(ps, lineColor, pointColor) {
+        ctx.beginPath();
+        ctx.moveTo(ps[0].x, ps[0].y);
+        for (let i = 1; i < ps.length; i++) {
+          ctx.lineTo(ps[i].x, ps[i].y);
+        }
+        ctx.strokeStyle = lineColor;
+        ctx.stroke();
+        ctx.closePath();
+
+        for (let i = 0; i < ps.length; i++) {
+          renderCircle(ps[i], pointColor);
+        }
+      }
+
+      function renderText(p, text) {
+        ctx.font = "20px Arial";
+        ctx.fillStyle = "black";
+        ctx.fillText(text, p.x, p.y);
+      }
+
+      function renderLine(p1, p2, color) {
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.strokeStyle = color;
+        ctx.stroke();
+        ctx.closePath();
+      }
+
+      let p_start = new Vec2(50, 500);
+      let p_end = new Vec2(950, 500);
+
+      function renderExpr(path) {
+        // 10 points to draw the rocket's trajectory
+        const n = 50;
+        let points = [];
+        for (let i = 0; i <= n; i++) {
+          const t = (path.t_max / n) * i;
+          points.push(path.rocketPosition(t));
+        }
+        renderPointLine(points, "black", "red");
+        let pos = path.rocketPosition(getTime() * path.t_max);
+        renderCircle(pos, "blue");
+
+        // Render velocity vector
+        const rocketVel = path.rocketVelocity(getTime() * path.t_max);
+        const velEnd = pos.add(rocketVel.mul(vel_scale));
+        renderLine(pos, velEnd, "white");
+
+        // Render time text
+        ctx.font = "20px Arial";
+        ctx.fillStyle = "black";
+        renderText({x: 10, y: 30}, "t_max: " + path.t_max.toFixed(2));
+      }
+
+      function combinePath(path1, path2) {
+        return {
+          t_max: path1.t_max + path2.t_max,
+          rocketPosition: function (t) {
+            if (t <= path1.t_max) {
+              return path1.rocketPosition(t);
+            } else {
+              return path2.rocketPosition(t - path1.t_max);
+            }
+          },
+          rocketVelocity: function (t) {
+            if (t <= path1.t_max) {
+              return path1.rocketVelocity(t);
+            } else {
+              return path2.rocketVelocity(t - path1.t_max);
+            }
+          },
+        };
+      }
+
+      function BreakFlightPath(p_start, a_max, initial_v) {
+        this.time_to_break = initial_v.length() / a_max;
+        this.dist_to_break = 0.5 * a_max * this.time_to_break * this.time_to_break;
+        const norm = initial_v.normOrZero();
+        this.p_end = p_start.add(norm.mul(this.dist_to_break));
+
+        this.t_max = this.time_to_break;
+
+        this.rocketPosition = function (t) {
+          if (t <= this.time_to_break) {
+            t = this.time_to_break - t;
+            return this.p_end.sub(norm.mul(0.5 * a_max * t * t));
+          } else {
+            return this.p_end;
+          }
+        };
+        this.rocketVelocity = function (t) {
+          if (t <= this.time_to_break) {
+            t = this.time_to_break - t;
+            return norm.mul(a_max * t);
+          } else {
+            return new Vec2(0, 0);
+          }
+        };
+      }
+
+      function LineFlightPath(p_start, p_end, a_max) {
+        // Calculate the distance between start and end points
+        const dd = p_end.sub(p_start);
+        const d = dd.length();
+
+        // Compute the unit vector in the direction from p_start to p_end
+        const u = dd.div(d);
+
+        // Calculate total time to travel from p_start to p_end
+        this.t_max = 2 * Math.sqrt(d / a_max);
+
+        this.rocketPosition = function (t) {
+          // Check if we're in the acceleration or deceleration phase
+          if (t <= this.t_max / 2) {
+            // Acceleration phase
+            return p_start.add(u.mul(0.5 * a_max * t * t));
+          } else if (t <= this.t_max) {
+            // Deceleration phase
+            const t_decel = this.t_max - t;
+            return p_end.add(u.mul(-0.5 * a_max * t_decel * t_decel));
+          } else {
+            // After t_max, the rocket remains at p_end
+            return p_end;
+          }
+        };
+
+        this.rocketVelocity = function (t) {
+          // Check if we're in the acceleration or deceleration phase
+          if (t <= this.t_max / 2) {
+            // Acceleration phase
+            return u.mul(a_max * t);
+          } else if (t <= this.t_max) {
+            // Deceleration phase
+            const t_decel = t - this.t_max / 2;
+            return u.mul(a_max * (this.t_max / 2 - t_decel));
+          } else {
+            // After t_max, the velocity is zero
+            return new Vec2(0, 0);
+          }
+        };
+      }
+
+      function DirectedInitialVFlightPath(p_start, p_end, a_max, initial_v) {
+        // Calculate the distance between start and end points
+        const dd = p_end.sub(p_start);
+        const d = dd.length();
+
+        // Compute the unit vector in the direction from p_start to p_end
+        const u = dd.div(d);
+
+        const break_path = new BreakFlightPath(p_start, a_max, u.mul(initial_v));
+
+        this.needsbreak = initial_v < 0 || break_path.dist_to_break > d;
+        if (this.needsbreak) {
+          const final_path = new LineFlightPath(break_path.p_end, p_end, a_max);
+          const combined = combinePath(break_path, final_path);
+          this.t_max = combined.t_max;
+          this.rocketPosition = combined.rocketPosition;
+          this.rocketVelocity = combined.rocketVelocity;
+        } else {
+          const fictive_start = p_start.sub(u.mul(break_path.dist_to_break));
+          const time_to_initial_v = break_path.time_to_break;
+          const actual_path = new LineFlightPath(fictive_start, p_end, a_max);
+          this.t_max = actual_path.t_max - time_to_initial_v;
+          this.rocketPosition = function (t) {
+            return actual_path.rocketPosition(t + time_to_initial_v);
+          };
+          this.rocketVelocity = function (t) {
+            return actual_path.rocketVelocity(t + time_to_initial_v);
+          };
+        }
+      }
+
+      function exp1() {
+        let a_max = getAMax();
+        let initial_v = click_pos.sub(p_start).x / vel_scale;
+
+        renderExpr(new DirectedInitialVFlightPath(p_start, p_end, a_max, initial_v));
+      }
+
+      function InitialVFlightPath(p_start, p_end, a_max, v0) {
+        // Calculate the distance between start and end points
+        const dd = p_end.sub(p_start);
+        const d = dd.length();
+
+        // Compute the unit vector in the direction from p_start to p_end
+        const u = dd.div(d);
+
+
+        // Decompose v0 into parallel and perpendicular components
+        const v0_parallel_len = v0.dot(u);
+        const v0_parallel = u.mul(v0_parallel_len);
+        const v0_perp = v0.sub(v0_parallel);
+        const v0_perp_len = v0_perp.length();
+
+        const v0_parallel_u = v0_parallel.div(v0_parallel_len);
+        const v0_perp_u = v0_perp.div(v0_perp_len);
+
+        // phase 1: cancel v0_perp
+        const v0_cancel_path = new BreakFlightPath(p_start, a_max, v0_perp);
+        const time_to_cancel_v0 = v0_cancel_path.t_max;
+        function cancel_pos(t) {
+          return v0_cancel_path.rocketPosition(t).add(v0_parallel.mul(t))
+        }
+        const pos_after_cancel_v0 = cancel_pos(v0_cancel_path.t_max);
+
+        renderCircle(pos_after_cancel_v0, "yellow");
+
+        // phase 2: continue accelerating in direction of -v0_perp until our velocity points towards p_end
+        //   ph2_a = -v0_perp.norm().mul(a_max);
+        // we know:
+        //   p(0) = pos_after_cancel_v0
+        //   p(t) = pos_after_cancel_v0 + v0_parallel * t + 0.5 * ph2_a * t^2
+        //   v(0) = v0_parallel
+        //   v(t) = v0_parallel + ph2_a * t
+        // we want to find a time q such that v(q) points from p(q) towards p_end:
+        //   v(q).norm() = (p_end - p(q)).norm()
+        //   or better
+        //   v(q).x / v(q).y = (p_end - p(q)).x / (p_end - p(q)).y
+        // we can't solve this out-right but we can trick by representing p and v in terms of u and v0_perp_u
+        // then we would only accelerate in the y direction and v(_).x would be constant (aka v(_).x = v0_parallel_len)
+        // note that v0_parallel_len might be negative, which means we move away from p_end, but then calc_q should just fail
+        function calc_q() {
+          if (v0_perp_len === 0 || v0_parallel_len === 0) {
+            return undefined;
+          }
+          function changeBase(v) {
+            return new Vec2(v.dot(u), v.dot(v0_perp_u));
+          }
+          console.log({ u, v0_perp_u });
+          let start = changeBase(pos_after_cancel_v0);
+          // also let's define start as 0, so end becomes:
+          let end = changeBase(p_end).sub(start);
+          // now know we know that we move along the x axis with a constant speed v0_parallel_len
+          // so px(t) = v0_parallel_len * t
+          //    py(t) = 0.5 * a_max * t^2
+          //    vx(t) = v0_parallel_len
+          //    vy(t) = a_max * t
+          // and we want to find a time q such that
+          //   vy(q) / vx(q) = (end.y - py(q)) / (end.x - px(q))
+          //   a_max * q / v0_parallel_len = (end.y - 0.5 * a_max * q^2) / (end.x - v0_parallel_len * q)
+          //   a_max * q * (end.x - v0_parallel_len * q) = v0_parallel_len * (end.y - 0.5 * a_max * q^2)
+          //   a_max * q * end.x - a_max * v0_parallel_len * q^2  = v0_parallel_len * end.y - 0.5 * a_max * v0_parallel_len * q^2
+          //   a_max * q * end.x = (0.5 * a_max * v0_parallel_len) * q^2 + (v0_parallel_len * end.y)
+          //   0 = (0.5 * a_max * v0_parallel_len) * q^2 - (a_max * end.x) * q + (v0_parallel_len * end.y)
+          const inner = ((a_max * end.x) * (a_max * end.x) - 4 * (0.5 * -a_max * v0_parallel_len) * (v0_parallel_len * end.y));
+          renderText({x: 10, y: 90}, "inner: " + inner.toFixed(2));
+          console.log({ inner, a_max, end, v0_parallel_len, u, v0_perp_u, start, v0_perp, pos_after_cancel_v0 });
+          if (inner < 0) {
+            return undefined;
+          }
+          const q = ((-a_max * end.x) + Math.sqrt(inner)) / (-a_max * v0_parallel_len);
+          
+          let x = v0_parallel_len * q;
+          renderText({x: 10, y: 60}, "q: " + q.toFixed(2));
+          if (q < 0 || x < 0) {
+            return undefined;
+          }
+        
+          return q;
+        }
+
+        const time_to_align = calc_q();
+
+        if (time_to_align === undefined) {
+          // ok, we just decelerate until we stop (v0_cancel_path) and then fly to p_end
+          const full_break_path = new BreakFlightPath(p_start, a_max, v0);
+          const final_path = new LineFlightPath(full_break_path.p_end, p_end, a_max);
+          const combined = combinePath(full_break_path, final_path);
+          this.t_max = combined.t_max;
+          this.rocketPosition = combined.rocketPosition;
+          this.rocketVelocity = combined.rocketVelocity;
+        } else {
+          function align_pos(t) {
+            return pos_after_cancel_v0.add(v0_parallel.mul(t)).sub(v0_perp_u.mul(0.5 * a_max * t * t));
+          }
+          function align_vel(t) {
+            return v0_parallel.sub(v0_perp_u.mul(a_max * t));
+          }
+          const pos_after_align = align_pos(time_to_align);
+          renderCircle(pos_after_align, "yellow");
+          const vel_after_align = align_vel(time_to_align);
+          const final_path = new DirectedInitialVFlightPath(pos_after_align, p_end, a_max, vel_after_align.length());
+
+          this.t_max = time_to_cancel_v0 + time_to_align + final_path.t_max;
+          this.rocketPosition = function (t) {
+            if (t <= time_to_cancel_v0) {
+              return cancel_pos(t);
+            } else if (t <= time_to_cancel_v0 + time_to_align) {
+              return align_pos(t - time_to_cancel_v0);
+            } else {
+              return final_path.rocketPosition(t - time_to_cancel_v0 - time_to_align);
+            }
+          };
+          this.rocketVelocity = function (t) {
+            if (t <= time_to_cancel_v0) {
+              return v0_cancel_path.rocketVelocity(t).add(v0_parallel);
+            } else if (t <= time_to_cancel_v0 + time_to_align) {
+              return align_vel(t - time_to_cancel_v0);
+            } else {
+              return final_path.rocketVelocity(t - time_to_cancel_v0 - time_to_align);
+            }
+          };
+        }
+      }
+
+      function exp2() {
+        let a_max = getAMax();
+        let initial_v = click_pos.sub(p_start).div(vel_scale);
+
+        renderExpr(new InitialVFlightPath(p_start, p_end, a_max, initial_v));
+      }
+
+      let last_vel = Vec2.zero;
+      function exp3() {
+        let a_max = getAMax();
+        if (click_pos != p_end) {
+          let cur_path = new InitialVFlightPath(p_start, p_end, a_max, last_vel)
+          p_end = click_pos;
+          p_start = cur_path.rocketPosition(getTime() * cur_path.t_max);
+          last_vel = cur_path.rocketVelocity(getTime() * cur_path.t_max);
+        }
+
+        renderExpr(new InitialVFlightPath(p_start, p_end, a_max, last_vel));
+      }
+
+      render();
+      timeRange.oninput = render;
+      radios.forEach((radio) => (radio.onchange = render));
+      aMaxRange.oninput = render;
+    </script>
+  </body>
+</html>

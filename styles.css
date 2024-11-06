@@ -9,6 +9,8 @@
     --border-color: #ddd;
     --shadow-color: rgba(0, 0, 0, 0.1);
     --focus-outline: 2px solid var(--primary-color);
+    --button-hover: #2980b9;
+    --button-active: #2472a4;
 }
 
 /* Accessibility: Hide elements visually but keep them available for screen readers */
@@ -102,6 +104,41 @@ canvas {
     background: white;
     border-radius: 8px;
     box-shadow: 0 2px 4px var(--shadow-color);
+}
+
+/* Control buttons */
+.control-button {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    margin: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.control-button:hover {
+    background: var(--button-hover);
+}
+
+.control-button:active {
+    background: var(--button-active);
+    transform: translateY(1px);
+}
+
+.control-button:focus {
+    outline: var(--focus-outline);
+    outline-offset: 2px;
+}
+
+/* Button container */
+.button-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 1rem 0;
 }
 
 /* Slider containers */
@@ -227,6 +264,20 @@ input[type="radio"] {
     margin: 0.5rem 0;
 }
 
+/* Performance stats */
+.performance-stats {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 8px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    pointer-events: none;
+}
+
 /* Focus styles for accessibility */
 input:focus,
 button:focus,
@@ -239,6 +290,27 @@ textarea:focus {
 canvas:focus {
     outline: var(--focus-outline);
     outline-offset: -2px;
+}
+
+/* Tooltip styles */
+.tooltip {
+    position: relative;
+    display: inline-block;
+}
+
+.tooltip:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 8px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 1000;
 }
 
 /* High contrast mode support */
@@ -254,6 +326,10 @@ canvas:focus {
     canvas {
         forced-color-adjust: none;
     }
+
+    .control-button {
+        border: 1px solid CanvasText;
+    }
 }
 
 /* Responsive design */
@@ -265,6 +341,15 @@ canvas:focus {
     .experiment-options {
         flex-direction: column;
         gap: 1rem;
+    }
+
+    .button-container {
+        flex-direction: column;
+    }
+
+    .control-button {
+        width: 100%;
+        margin: 4px 0;
     }
 }
 
@@ -306,5 +391,9 @@ canvas:focus {
     .experiment-details {
         background: none;
         box-shadow: none;
+    }
+
+    .control-button {
+        display: none;
     }
 }

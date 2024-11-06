@@ -1,5 +1,16 @@
 import { Vec2, DirectedInitialVFlightPath, InitialVFlightPath } from './trajectory.js';
+import { PerformanceMonitor } from './performance.js';
 
+/**
+ * @typedef {Object} TrajectoryState
+ * @property {Vec2} position - Current position vector
+ * @property {Vec2} velocity - Current velocity vector
+ * @property {number} time - Current time in seconds
+ */
+
+/**
+ * Main simulation class for spaceship trajectory visualization and calculation
+ */
 class TrajectorySimulation {
     constructor() {
         // Initialize canvas with error handling
@@ -9,9 +20,13 @@ class TrajectorySimulation {
         this.ctx = this.canvas.getContext('2d');
         if (!this.ctx) throw new Error('Could not get 2D context');
 
+        // Initialize performance monitoring
+        this.perfMonitor = new PerformanceMonitor();
+
         // Constants and configuration
         this.config = {
             vel_scale: 25,
+            acc_scale: 50, // Scale for acceleration vectors
             pointRadius: 8,
             smallPointRadius: 2,
             gridSize: 50,
@@ -23,8 +38,10 @@ class TrajectorySimulation {
                 points: '#e74c3c',
                 currentPos: '#2ecc71',
                 velocity: '#f1c40f',
+                acceleration: '#e67e22', // Color for acceleration vectors
                 start: '#e74c3c',
-                end: '#3498db'
+                end: '#3498db',
+                perfStats: '#95a5a6'
             }
         };
 
@@ -41,7 +58,9 @@ class TrajectorySimulation {
             drag: false,
             selectedPoint: null,
             currentPath: null,
-            error: null
+            error: null,
+            showPerfStats: false, // Toggle for performance stats
+            showAcceleration: true // Toggle for acceleration vectors
         };
 
         // Cache DOM elements
@@ -49,7 +68,10 @@ class TrajectorySimulation {
             animateCheckbox: document.getElementById('animateTrajectory'),
             timeRange: document.getElementById('timeRange'),
             aMaxRange: document.getElementById('aMaxRange'),
-            radios: document.getElementsByName('experiment')
+            radios: document.getElementsByName('experiment'),
+            exportButton: document.getElementById('exportButton'),
+            perfStatsButton: document.getElementById('perfStatsButton'),
+            accelerationButton: document.getElementById('accelerationButton')
         };
 
         // Validate UI elements
@@ -140,6 +162,17 @@ class TrajectorySimulation {
             radio.addEventListener('change', () => this.render())
         );
         this.ui.animateCheckbox.addEventListener('change', () => this.toggleAnimation());
+
+        // Button events
+        this.ui.exportButton.addEventListener('click', () => this.exportTrajectory());
+        this.ui.perfStatsButton.addEventListener('click', () => {
+            this.state.showPerfStats = !this.state.showPerfStats;
+            this.render();
+        });
+        this.ui.accelerationButton.addEventListener('click', () => {
+            this.state.showAcceleration = !this.state.showAcceleration;
+            this.render();
+        });
 
         // Window resize handling
         window.addEventListener('resize', this.handleResize.bind(this));
@@ -285,6 +318,8 @@ class TrajectorySimulation {
     animate(currentTime) {
         if (!this.ui.animateCheckbox.checked) return;
 
+        this.perfMonitor.startFrame();
+
         if (!this.lastRenderTime) this.lastRenderTime = currentTime;
 
         const elapsed = currentTime - this.lastRenderTime;
@@ -295,6 +330,7 @@ class TrajectorySimulation {
             this.lastRenderTime = currentTime;
         }
 
+        this.perfMonitor.endFrame();
         this.animationId = requestAnimationFrame(this.animate.bind(this));
     }
 
@@ -364,14 +400,101 @@ class TrajectorySimulation {
         this.ctx.closePath();
     }
 
+    renderArrow(p1, p2, color, width = 1) {
+        const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+        const length = new Vec2(p2.x - p1.x, p2.y - p1.y).length();
+        
+        // Draw main line
+        this.renderLine(p1, p2, color, width);
+        
+        // Draw arrowhead
+        const arrowLength = Math.min(10, length / 3);
+        const arrowWidth = arrowLength * 0.5;
+        
+        this.ctx.beginPath();
+        this.ctx.moveTo(p2.x, p2.y);
+        this.ctx.lineTo(
+            p2.x - arrowLength * Math.cos(angle - Math.PI/6),
+            p2.y - arrowLength * Math.sin(angle - Math.PI/6)
+        );
+        this.ctx.lineTo(
+            p2.x - arrowLength * Math.cos(angle + Math.PI/6),
+            p2.y - arrowLength * Math.sin(angle + Math.PI/6)
+        );
+        this.ctx.closePath();
+        
+        this.ctx.fillStyle = color;
+        this.ctx.fill();
+    }
+
+    getCurrentPath() {
+        const experiment = this.getExperiment();
+        const a_max = this.getAMax();
+            
+        switch (experiment) {
+            case 'basic':
+                return this.experimentBasic();
+            case 'better':
+                return this.experimentBetter();
+            case 'move':
+                return this.experimentMove();
+            default:
+                return this.experimentBasic();
+        }
+    }
+
+    /**
+     * Exports current trajectory data as JSON
+     */
+    exportTrajectory() {
+        try {
+            const path = this.getCurrentPath();
+            const points = path.getCachedPoints();
+            
+            const trajectoryData = {
+                metadata: {
+                    startPosition: this.state.p_start,
+                    endPosition: this.state.p_end,
+                    maxAcceleration: this.getAMax(),
+                    totalTime: path.t_max,
+                    method: this.getExperiment()
+                },
+                points: points.map(p => ({
+                    time: p.time,
+                    position: p.position,
+                    velocity: p.velocity
+                }))
+            };
+
+            const blob = new Blob([JSON.stringify(trajectoryData, null, 2)], 
+                                {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'trajectory.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Error exporting trajectory:', error);
+            this.state.error = 'Failed to export trajectory';
+        }
+    }
+
     renderTrajectory(path) {
         try {
+            this.perfMonitor.startCalculation();
             const points = path.getCachedPoints().map(p => p.position);
+            this.perfMonitor.endCalculation();
+            
+            this.perfMonitor.startRender();
             
             // Render trajectory path
             this.renderPointLine(points, this.config.colors.trajectory, this.config.colors.points);
 
-            // Render current position
+            // Render current position and vectors
             const currentTime = this.getTime() * path.t_max;
             const state = path.getStateAtTime(currentTime);
             
@@ -379,7 +502,16 @@ class TrajectorySimulation {
 
             // Render velocity vector
             const velEnd = state.position.add(state.velocity.mul(this.config.vel_scale));
-            this.renderLine(state.position, velEnd, this.config.colors.velocity, 2);
+            this.renderArrow(state.position, velEnd, this.config.colors.velocity, 2);
+
+            // Render acceleration vector if enabled
+            if (this.state.showAcceleration) {
+                const dt = 0.01;
+                const nextState = path.getStateAtTime(Math.min(currentTime + dt, path.t_max));
+                const acceleration = nextState.velocity.sub(state.velocity).div(dt);
+                const accEnd = state.position.add(acceleration.mul(this.config.acc_scale));
+                this.renderArrow(state.position, accEnd, this.config.colors.acceleration, 2);
+            }
 
             // Render start and end points with labels
             this.renderCircle(this.state.p_start, this.config.colors.start, this.config.pointRadius);
@@ -393,8 +525,23 @@ class TrajectorySimulation {
             this.renderText(new Vec2(10, 60), `Max Time: ${path.t_max.toFixed(2)}s`);
             this.renderText(new Vec2(10, 90), `Speed: ${state.velocity.length().toFixed(2)} u/s`);
 
+            // Render performance stats if enabled
+            if (this.state.showPerfStats) {
+                const stats = this.perfMonitor.getAverageMetrics();
+                const statsY = this.canvas.height - 100;
+                this.ctx.fillStyle = this.config.colors.perfStats;
+                this.ctx.fillText(`FPS: ${stats.fps}`, 10, statsY);
+                this.ctx.fillText(`Calc Time: ${stats.calculationTime}ms`, 10, statsY + 20);
+                this.ctx.fillText(`Render Time: ${stats.renderTime}ms`, 10, statsY + 40);
+                if (stats.memoryUsage > 0) {
+                    this.ctx.fillText(`Memory: ${stats.memoryUsage}MB`, 10, statsY + 60);
+                }
+            }
+
             // Clear any previous errors
             this.state.error = null;
+            
+            this.perfMonitor.endFrame();
         } catch (error) {
             console.error('Error rendering trajectory:', error);
             this.state.error = error.message;
@@ -451,24 +598,8 @@ class TrajectorySimulation {
                 1
             );
 
-            // Render appropriate experiment
-            const experiment = this.getExperiment();
-            let path;
-            
-            switch (experiment) {
-                case 'basic':
-                    path = this.experimentBasic();
-                    break;
-                case 'better':
-                    path = this.experimentBetter();
-                    break;
-                case 'move':
-                    path = this.experimentMove();
-                    break;
-                default:
-                    path = this.experimentBasic();
-            }
-
+            // Get and render appropriate path
+            const path = this.getCurrentPath();
             this.renderTrajectory(path);
 
             // Render any error messages

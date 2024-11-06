@@ -12,6 +12,7 @@ class TrajectorySimulation {
         this.click_pos = new Vec2(100, 500);
         this.last_vel = Vec2.zero;
         this.drag = false;
+        this.selectedPoint = null; // Track which point is being dragged
 
         // UI Controls
         this.animateTrajectory = document.getElementById('animateTrajectory');
@@ -27,12 +28,18 @@ class TrajectorySimulation {
         // Mouse interaction
         this.canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
         this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
-        this.canvas.addEventListener('mouseup', () => this.drag = false);
+        this.canvas.addEventListener('mouseup', () => {
+            this.drag = false;
+            this.selectedPoint = null;
+        });
         
         // Touch interaction for mobile devices
         this.canvas.addEventListener('touchstart', this.handleTouchStart.bind(this));
         this.canvas.addEventListener('touchmove', this.handleTouchMove.bind(this));
-        this.canvas.addEventListener('touchend', () => this.drag = false);
+        this.canvas.addEventListener('touchend', () => {
+            this.drag = false;
+            this.selectedPoint = null;
+        });
 
         // Control updates
         this.timeRange.oninput = () => this.render();
@@ -41,37 +48,80 @@ class TrajectorySimulation {
         this.animateTrajectory.onclick = () => this.toggleAnimation();
     }
 
+    isNearPoint(pos, point) {
+        return new Vec2(pos.x - point.x, pos.y - point.y).length() < 15;
+    }
+
     handleMouseDown(event) {
+        const mousePos = new Vec2(
+            event.pageX - this.canvas.offsetLeft,
+            event.pageY - this.canvas.offsetTop
+        );
+
+        // Check if clicking near start or end point
+        if (this.isNearPoint(mousePos, this.p_start)) {
+            this.selectedPoint = 'start';
+        } else if (this.isNearPoint(mousePos, this.p_end)) {
+            this.selectedPoint = 'end';
+        }
+
         this.drag = true;
-        this.updateClickPos(event.pageX - this.canvas.offsetLeft, event.pageY - this.canvas.offsetTop);
+        this.updateClickPos(mousePos.x, mousePos.y);
     }
 
     handleMouseMove(event) {
         if (this.drag) {
-            this.updateClickPos(event.pageX - this.canvas.offsetLeft, event.pageY - this.canvas.offsetTop);
+            this.updateClickPos(
+                event.pageX - this.canvas.offsetLeft,
+                event.pageY - this.canvas.offsetTop
+            );
         }
     }
 
     handleTouchStart(event) {
         event.preventDefault();
-        this.drag = true;
         const touch = event.touches[0];
-        this.updateClickPos(touch.pageX - this.canvas.offsetLeft, touch.pageY - this.canvas.offsetTop);
+        const touchPos = new Vec2(
+            touch.pageX - this.canvas.offsetLeft,
+            touch.pageY - this.canvas.offsetTop
+        );
+
+        // Check if touching near start or end point
+        if (this.isNearPoint(touchPos, this.p_start)) {
+            this.selectedPoint = 'start';
+        } else if (this.isNearPoint(touchPos, this.p_end)) {
+            this.selectedPoint = 'end';
+        }
+
+        this.drag = true;
+        this.updateClickPos(touchPos.x, touchPos.y);
     }
 
     handleTouchMove(event) {
         event.preventDefault();
         if (this.drag) {
             const touch = event.touches[0];
-            this.updateClickPos(touch.pageX - this.canvas.offsetLeft, touch.pageY - this.canvas.offsetTop);
+            this.updateClickPos(
+                touch.pageX - this.canvas.offsetLeft,
+                touch.pageY - this.canvas.offsetTop
+            );
         }
     }
 
     updateClickPos(x, y) {
-        this.click_pos = new Vec2(
+        const newPos = new Vec2(
             Math.max(0, Math.min(this.canvas.width, x)),
             Math.max(0, Math.min(this.canvas.height, y))
         );
+
+        if (this.selectedPoint === 'start') {
+            this.p_start = newPos;
+        } else if (this.selectedPoint === 'end') {
+            this.p_end = newPos;
+        } else {
+            this.click_pos = newPos;
+        }
+
         this.render();
     }
 
@@ -202,9 +252,12 @@ class TrajectorySimulation {
         const velEnd = currentPos.add(rocketVel.mul(this.vel_scale));
         this.renderLine(currentPos, velEnd, '#f1c40f', 2);
 
-        // Render start and end points
+        // Render start and end points with labels
         this.renderCircle(this.p_start, '#e74c3c', 8);
+        this.renderText(this.p_start.add(new Vec2(10, -10)), 'Start');
+        
         this.renderCircle(this.p_end, '#3498db', 8);
+        this.renderText(this.p_end.add(new Vec2(10, -10)), 'End');
         
         // Render time information
         this.renderText(new Vec2(10, 30), `Time: ${currentTime.toFixed(2)}s`);
@@ -228,9 +281,10 @@ class TrajectorySimulation {
         const a_max = this.getAMax();
         if (!this.click_pos.equals(this.p_end)) {
             const cur_path = new InitialVFlightPath(this.p_start, this.p_end, a_max, this.last_vel);
+            const currentTime = this.getTime() * cur_path.t_max;
+            this.p_start = cur_path.rocketPosition(currentTime);
+            this.last_vel = cur_path.rocketVelocity(currentTime);
             this.p_end = this.click_pos;
-            this.p_start = cur_path.rocketPosition(this.getTime() * cur_path.t_max);
-            this.last_vel = cur_path.rocketVelocity(this.getTime() * cur_path.t_max);
         }
         return new InitialVFlightPath(this.p_start, this.p_end, a_max, this.last_vel);
     }

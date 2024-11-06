@@ -1,8 +1,8 @@
-import { Vec2 } from './Vec2';
-import { FlightPath } from './FlightPath';
-import { BreakFlightPath } from './BreakFlightPath';
-import { LineFlightPath } from './LineFlightPath';
-import { combinePath } from '../utils/pathCombiner';
+import { Vec2 } from './Vec2.js';
+import { FlightPath } from './FlightPath.js';
+import { BreakFlightPath } from './BreakFlightPath.js';
+import { LineFlightPath } from './LineFlightPath.js';
+import { combinePath } from '../utils/pathCombiner.js';
 
 /**
  * Handles flight paths with a specific initial velocity in a given direction
@@ -23,8 +23,9 @@ export class DirectedInitialVFlightPath extends FlightPath {
         const distance = dd.length();
         
         if (distance === 0) {
-            this.implementation = new BreakFlightPath(p_start, a_max, new Vec2(initial_v, 0));
-            this.t_max = this.implementation.getMaxTime();
+            const break_path = new BreakFlightPath(p_start, a_max, new Vec2(initial_v, 0));
+            this.t_max = break_path.getMaxTime();
+            this.implementation = break_path;
             return;
         }
 

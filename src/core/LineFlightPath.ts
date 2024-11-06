@@ -1,5 +1,5 @@
-import { Vec2 } from './Vec2';
-import { FlightPath } from './FlightPath';
+import { Vec2 } from './Vec2.js';
+import { FlightPath } from './FlightPath.js';
 
 /**
  * Handles straight line flight paths with acceleration and deceleration phases

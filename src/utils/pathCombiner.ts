@@ -1,5 +1,5 @@
-import { Vec2 } from '../core/Vec2';
-import { FlightPath } from '../core/FlightPath';
+import { Vec2 } from '../core/Vec2.js';
+import { FlightPath } from '../core/FlightPath.js';
 
 /**
  * Combines multiple flight paths into a single continuous path

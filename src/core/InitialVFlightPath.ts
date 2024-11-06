@@ -1,9 +1,10 @@
-import { Vec2 } from './Vec2';
-import { FlightPath } from './FlightPath';
-import { BreakFlightPath } from './BreakFlightPath';
-import { DirectedInitialVFlightPath } from './DirectedInitialVFlightPath';
-import { CompositePath } from './CompositePath';
-import { combinePath } from '../utils/pathCombiner';
+import { Vec2 } from './Vec2.js';
+import { FlightPath } from './FlightPath.js';
+import { BreakFlightPath } from './BreakFlightPath.js';
+import { DirectedInitialVFlightPath } from './DirectedInitialVFlightPath.js';
+import { CompositePath } from './CompositePath.js';
+import { combinePath } from '../utils/pathCombiner.js';
+
 
 /**
  * Handles flight paths with any initial velocity vector

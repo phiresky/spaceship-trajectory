@@ -1,7 +1,7 @@
-export { Vec2 } from './Vec2';
-export { FlightPath } from './FlightPath';
-export { BreakFlightPath } from './BreakFlightPath';
-export { LineFlightPath } from './LineFlightPath';
-export { DirectedInitialVFlightPath } from './DirectedInitialVFlightPath';
-export { InitialVFlightPath } from './InitialVFlightPath';
-export { CompositePath } from './CompositePath';
+export { Vec2 } from './Vec2.js';
+export { FlightPath } from './FlightPath.js';
+export { BreakFlightPath } from './BreakFlightPath.js';
+export { LineFlightPath } from './LineFlightPath.js';
+export { DirectedInitialVFlightPath } from './DirectedInitialVFlightPath.js';
+export { InitialVFlightPath } from './InitialVFlightPath.js';
+export { CompositePath } from './CompositePath.js';

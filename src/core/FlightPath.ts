@@ -1,5 +1,5 @@
-import { Vec2 } from './Vec2';
-import { TrajectoryState } from '../types/vectors';
+import { Vec2 } from './Vec2.js';
+import { TrajectoryState } from '../types/vectors.js';
 
 /**
  * Base class for different flight path calculations

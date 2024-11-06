@@ -3,30 +3,80 @@
  */
 class Vec2 {
     constructor(x, y) {
+        // Input validation
+        if (typeof x !== 'number' || typeof y !== 'number') {
+            throw new Error('Vec2 coordinates must be numbers');
+        }
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            throw new Error('Vec2 coordinates must be finite numbers');
+        }
         this.x = x;
         this.y = y;
     }
 
-    add(v) { return new Vec2(this.x + v.x, this.y + v.y); }
-    sub(v) { return new Vec2(this.x - v.x, this.y - v.y); }
-    mul(s) { return new Vec2(this.x * s, this.y * s); }
-    div(s) { return new Vec2(this.x / s, this.y / s); }
+    add(v) { 
+        if (!(v instanceof Vec2)) throw new Error('Can only add Vec2 instances');
+        return new Vec2(this.x + v.x, this.y + v.y); 
+    }
+    
+    sub(v) { 
+        if (!(v instanceof Vec2)) throw new Error('Can only subtract Vec2 instances');
+        return new Vec2(this.x - v.x, this.y - v.y); 
+    }
+    
+    mul(s) { 
+        if (typeof s !== 'number') throw new Error('Can only multiply by number');
+        return new Vec2(this.x * s, this.y * s); 
+    }
+    
+    div(s) { 
+        if (typeof s !== 'number') throw new Error('Can only divide by number');
+        if (s === 0) throw new Error('Division by zero');
+        return new Vec2(this.x / s, this.y / s); 
+    }
     
     length() { return Math.sqrt(this.x * this.x + this.y * this.y); }
     
-    norm() { return this.div(this.length()); }
+    norm() { 
+        const len = this.length();
+        if (len === 0) throw new Error('Cannot normalize zero vector');
+        return this.div(len); 
+    }
     
     normOrZero() {
         const l = this.length();
         return l === 0 ? Vec2.zero : this.div(l);
     }
     
-    dot(v) { return this.x * v.x + this.y * v.y; }
-    cross(v) { return this.x * v.y - this.y * v.x; }
+    dot(v) { 
+        if (!(v instanceof Vec2)) throw new Error('Can only dot product with Vec2');
+        return this.x * v.x + this.y * v.y; 
+    }
     
-    equals(v) { return this.x === v.x && this.y === v.y; }
+    cross(v) { 
+        if (!(v instanceof Vec2)) throw new Error('Can only cross product with Vec2');
+        return this.x * v.y - this.y * v.x; 
+    }
+    
+    equals(v) { 
+        if (!(v instanceof Vec2)) return false;
+        return this.x === v.x && this.y === v.y; 
+    }
 
     static get zero() { return new Vec2(0, 0); }
+
+    // Added method for serialization
+    toJSON() {
+        return { x: this.x, y: this.y };
+    }
+
+    // Added method for creating Vec2 from object
+    static fromJSON(obj) {
+        if (!obj || typeof obj.x !== 'number' || typeof obj.y !== 'number') {
+            throw new Error('Invalid JSON format for Vec2');
+        }
+        return new Vec2(obj.x, obj.y);
+    }
 }
 
 /**
@@ -35,10 +85,56 @@ class Vec2 {
 class FlightPath {
     constructor() {
         this.t_max = 0;
+        this._cachedPoints = null;
+        this._cacheResolution = 50;
     }
 
     rocketPosition(t) { throw new Error('Not implemented'); }
     rocketVelocity(t) { throw new Error('Not implemented'); }
+
+    // Performance optimization: Cache trajectory points
+    getCachedPoints() {
+        if (!this._cachedPoints) {
+            this._cachedPoints = Array.from(
+                {length: this._cacheResolution + 1}, 
+                (_, i) => {
+                    const t = (this.t_max / this._cacheResolution) * i;
+                    return {
+                        position: this.rocketPosition(t),
+                        velocity: this.rocketVelocity(t),
+                        time: t
+                    };
+                }
+            );
+        }
+        return this._cachedPoints;
+    }
+
+    // Get interpolated state at any time
+    getStateAtTime(t) {
+        if (t < 0 || t > this.t_max) {
+            throw new Error(`Time ${t} is outside valid range [0, ${this.t_max}]`);
+        }
+
+        const points = this.getCachedPoints();
+        const timeStep = this.t_max / this._cacheResolution;
+        const index = Math.floor(t / timeStep);
+        
+        // Handle edge cases
+        if (index >= points.length - 1) return points[points.length - 1];
+        if (index < 0) return points[0];
+
+        // Linear interpolation between cached points
+        const p1 = points[index];
+        const p2 = points[index + 1];
+        const alpha = (t - p1.time) / timeStep;
+
+        return {
+            position: p1.position.add(p2.position.sub(p1.position).mul(alpha)),
+            velocity: p1.velocity.add(p2.velocity.sub(p1.velocity).mul(alpha)),
+            time: t
+        };
+    }
 }
 
 /**
@@ -47,6 +143,12 @@ class FlightPath {
 class BreakFlightPath extends FlightPath {
     constructor(p_start, a_max, initial_v) {
         super();
+        if (!(p_start instanceof Vec2)) throw new Error('p_start must be Vec2');
+        if (!(initial_v instanceof Vec2)) throw new Error('initial_v must be Vec2');
+        if (typeof a_max !== 'number' || a_max <= 0) {
+            throw new Error('a_max must be positive number');
+        }
+
         this.time_to_break = initial_v.length() / a_max;
         this.dist_to_break = 0.5 * a_max * this.time_to_break * this.time_to_break;
         this.norm = initial_v.normOrZero();
@@ -56,6 +158,8 @@ class BreakFlightPath extends FlightPath {
     }
 
     rocketPosition(t) {
+        if (t < 0) throw new Error('Time cannot be negative');
+        
         if (t <= this.time_to_break) {
             const remaining = this.time_to_break - t;
             return this.p_end.sub(this.norm.mul(0.5 * this.a_max * remaining * remaining));
@@ -64,6 +168,8 @@ class BreakFlightPath extends FlightPath {
     }
 
     rocketVelocity(t) {
+        if (t < 0) throw new Error('Time cannot be negative');
+        
         if (t <= this.time_to_break) {
             const remaining = this.time_to_break - t;
             return this.norm.mul(this.a_max * remaining);
@@ -78,17 +184,33 @@ class BreakFlightPath extends FlightPath {
 class LineFlightPath extends FlightPath {
     constructor(p_start, p_end, a_max) {
         super();
+        if (!(p_start instanceof Vec2)) throw new Error('p_start must be Vec2');
+        if (!(p_end instanceof Vec2)) throw new Error('p_end must be Vec2');
+        if (typeof a_max !== 'number' || a_max <= 0) {
+            throw new Error('a_max must be positive number');
+        }
+
         this.p_start = p_start;
         this.p_end = p_end;
         this.a_max = a_max;
 
         const dd = p_end.sub(p_start);
         this.distance = dd.length();
-        this.direction = dd.div(this.distance);
-        this.t_max = 2 * Math.sqrt(this.distance / a_max);
+        
+        if (this.distance === 0) {
+            this.direction = Vec2.zero;
+            this.t_max = 0;
+        } else {
+            this.direction = dd.div(this.distance);
+            this.t_max = 2 * Math.sqrt(this.distance / a_max);
+        }
     }
 
     rocketPosition(t) {
+        if (t < 0) throw new Error('Time cannot be negative');
+        
+        if (this.distance === 0) return this.p_start;
+        
         if (t <= this.t_max / 2) {
             // Acceleration phase
             return this.p_start.add(this.direction.mul(0.5 * this.a_max * t * t));
@@ -101,6 +223,10 @@ class LineFlightPath extends FlightPath {
     }
 
     rocketVelocity(t) {
+        if (t < 0) throw new Error('Time cannot be negative');
+        
+        if (this.distance === 0) return Vec2.zero;
+        
         if (t <= this.t_max / 2) {
             return this.direction.mul(this.a_max * t);
         } else if (t <= this.t_max) {
@@ -115,10 +241,15 @@ class LineFlightPath extends FlightPath {
  * Combines multiple flight paths into a single continuous path
  */
 function combinePath(path1, path2) {
+    if (!(path1 instanceof FlightPath)) throw new Error('path1 must be FlightPath');
+    if (!(path2 instanceof FlightPath)) throw new Error('path2 must be FlightPath');
+
     const combined = new FlightPath();
     combined.t_max = path1.t_max + path2.t_max;
     
     combined.rocketPosition = function(t) {
+        if (t < 0) throw new Error('Time cannot be negative');
+        
         if (t <= path1.t_max) {
             return path1.rocketPosition(t);
         }
@@ -126,6 +257,8 @@ function combinePath(path1, path2) {
     };
     
     combined.rocketVelocity = function(t) {
+        if (t < 0) throw new Error('Time cannot be negative');
+        
         if (t <= path1.t_max) {
             return path1.rocketVelocity(t);
         }
@@ -141,10 +274,25 @@ function combinePath(path1, path2) {
 class DirectedInitialVFlightPath extends FlightPath {
     constructor(p_start, p_end, a_max, initial_v) {
         super();
+        if (!(p_start instanceof Vec2)) throw new Error('p_start must be Vec2');
+        if (!(p_end instanceof Vec2)) throw new Error('p_end must be Vec2');
+        if (typeof a_max !== 'number' || a_max <= 0) {
+            throw new Error('a_max must be positive number');
+        }
+        if (typeof initial_v !== 'number') throw new Error('initial_v must be number');
+
         const dd = p_end.sub(p_start);
         const distance = dd.length();
-        const direction = dd.div(distance);
+        
+        if (distance === 0) {
+            const break_path = new BreakFlightPath(p_start, a_max, new Vec2(initial_v, 0));
+            this.t_max = break_path.t_max;
+            this.rocketPosition = break_path.rocketPosition.bind(break_path);
+            this.rocketVelocity = break_path.rocketVelocity.bind(break_path);
+            return;
+        }
 
+        const direction = dd.div(distance);
         const break_path = new BreakFlightPath(p_start, a_max, direction.mul(initial_v));
         
         if (initial_v < 0 || break_path.dist_to_break > distance) {
@@ -170,7 +318,22 @@ class DirectedInitialVFlightPath extends FlightPath {
 class InitialVFlightPath extends FlightPath {
     constructor(p_start, p_end, a_max, v0) {
         super();
+        if (!(p_start instanceof Vec2)) throw new Error('p_start must be Vec2');
+        if (!(p_end instanceof Vec2)) throw new Error('p_end must be Vec2');
+        if (typeof a_max !== 'number' || a_max <= 0) {
+            throw new Error('a_max must be positive number');
+        }
+        if (!(v0 instanceof Vec2)) throw new Error('v0 must be Vec2');
+
         const dd = p_end.sub(p_start);
+        if (dd.length() === 0) {
+            const break_path = new BreakFlightPath(p_start, a_max, v0);
+            this.t_max = break_path.t_max;
+            this.rocketPosition = break_path.rocketPosition.bind(break_path);
+            this.rocketVelocity = break_path.rocketVelocity.bind(break_path);
+            return;
+        }
+
         const direction = dd.div(dd.length());
 
         // Decompose initial velocity into parallel and perpendicular components
@@ -226,6 +389,8 @@ class InitialVFlightPath extends FlightPath {
             this.t_max = time_to_cancel_v0 + time_to_align + final_path.t_max;
             
             this.rocketPosition = t => {
+                if (t < 0) throw new Error('Time cannot be negative');
+                
                 if (t <= time_to_cancel_v0) {
                     return cancel_pos(t);
                 } else if (t <= time_to_cancel_v0 + time_to_align) {
@@ -235,6 +400,8 @@ class InitialVFlightPath extends FlightPath {
             };
             
             this.rocketVelocity = t => {
+                if (t < 0) throw new Error('Time cannot be negative');
+                
                 if (t <= time_to_cancel_v0) {
                     return v0_cancel_path.rocketVelocity(t).add(v0_parallel);
                 } else if (t <= time_to_cancel_v0 + time_to_align) {

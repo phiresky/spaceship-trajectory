@@ -2,146 +2,268 @@ import { Vec2, DirectedInitialVFlightPath, InitialVFlightPath } from './trajecto
 
 class TrajectorySimulation {
     constructor() {
+        // Initialize canvas with error handling
         this.canvas = document.getElementById('myCanvas');
+        if (!this.canvas) throw new Error('Canvas element not found');
+        
         this.ctx = this.canvas.getContext('2d');
-        this.vel_scale = 25;
-        
-        // Initial positions
-        this.p_start = new Vec2(50, 500);
-        this.p_end = new Vec2(950, 500);
-        this.click_pos = new Vec2(100, 500);
-        this.last_vel = Vec2.zero;
-        this.drag = false;
-        this.selectedPoint = null; // Track which point is being dragged
+        if (!this.ctx) throw new Error('Could not get 2D context');
 
-        // UI Controls
-        this.animateTrajectory = document.getElementById('animateTrajectory');
-        this.timeRange = document.getElementById('timeRange');
-        this.aMaxRange = document.getElementById('aMaxRange');
-        this.radios = document.getElementsByName('experiment');
+        // Constants and configuration
+        this.config = {
+            vel_scale: 25,
+            pointRadius: 8,
+            smallPointRadius: 2,
+            gridSize: 50,
+            trajectoryPoints: 50,
+            animationFPS: 60,
+            colors: {
+                grid: 'rgba(255, 255, 255, 0.1)',
+                trajectory: '#3498db',
+                points: '#e74c3c',
+                currentPos: '#2ecc71',
+                velocity: '#f1c40f',
+                start: '#e74c3c',
+                end: '#3498db'
+            }
+        };
+
+        // Performance optimization: Use requestAnimationFrame
+        this.lastRenderTime = 0;
+        this.frameInterval = 1000 / this.config.animationFPS;
         
+        // State initialization
+        this.state = {
+            p_start: new Vec2(50, 500),
+            p_end: new Vec2(950, 500),
+            click_pos: new Vec2(100, 500),
+            last_vel: Vec2.zero,
+            drag: false,
+            selectedPoint: null,
+            currentPath: null,
+            error: null
+        };
+
+        // Cache DOM elements
+        this.ui = {
+            animateCheckbox: document.getElementById('animateTrajectory'),
+            timeRange: document.getElementById('timeRange'),
+            aMaxRange: document.getElementById('aMaxRange'),
+            radios: document.getElementsByName('experiment')
+        };
+
+        // Validate UI elements
+        Object.entries(this.ui).forEach(([key, element]) => {
+            if (!element) throw new Error(`UI element '${key}' not found`);
+        });
+
+        // Add ARIA labels and roles for accessibility
+        this.setupAccessibility();
+        
+        // Setup event listeners
         this.setupEventListeners();
+        
+        // Start animation
         this.startAnimation();
+
+        // Initial render
+        this.render();
+    }
+
+    setupAccessibility() {
+        this.canvas.setAttribute('role', 'application');
+        this.canvas.setAttribute('aria-label', 'Spaceship Trajectory Simulator Canvas');
+        
+        // Add keyboard controls
+        this.canvas.setAttribute('tabindex', '0');
+        this.canvas.addEventListener('keydown', this.handleKeyboard.bind(this));
+
+        // Add ARIA descriptions
+        document.querySelectorAll('.experiment-option label').forEach(label => {
+            const description = label.getAttribute('title');
+            if (description) {
+                const id = `desc-${label.getAttribute('for')}`;
+                label.setAttribute('aria-describedby', id);
+                const desc = document.createElement('div');
+                desc.id = id;
+                desc.className = 'sr-only';
+                desc.textContent = description;
+                label.parentNode.appendChild(desc);
+            }
+        });
+    }
+
+    handleKeyboard(event) {
+        const step = event.shiftKey ? 10 : 1;
+        let handled = true;
+
+        switch(event.key) {
+            case 'ArrowLeft':
+                this.state.click_pos = this.state.click_pos.add(new Vec2(-step, 0));
+                break;
+            case 'ArrowRight':
+                this.state.click_pos = this.state.click_pos.add(new Vec2(step, 0));
+                break;
+            case 'ArrowUp':
+                this.state.click_pos = this.state.click_pos.add(new Vec2(0, -step));
+                break;
+            case 'ArrowDown':
+                this.state.click_pos = this.state.click_pos.add(new Vec2(0, step));
+                break;
+            default:
+                handled = false;
+        }
+
+        if (handled) {
+            event.preventDefault();
+            this.render();
+        }
     }
 
     setupEventListeners() {
-        // Mouse interaction
+        // Mouse events
         this.canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
         this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
-        this.canvas.addEventListener('mouseup', () => {
-            this.drag = false;
-            this.selectedPoint = null;
-        });
+        this.canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
+        this.canvas.addEventListener('mouseleave', this.handleMouseUp.bind(this));
         
-        // Touch interaction for mobile devices
+        // Touch events
         this.canvas.addEventListener('touchstart', this.handleTouchStart.bind(this));
         this.canvas.addEventListener('touchmove', this.handleTouchMove.bind(this));
-        this.canvas.addEventListener('touchend', () => {
-            this.drag = false;
-            this.selectedPoint = null;
-        });
+        this.canvas.addEventListener('touchend', this.handleMouseUp.bind(this));
+        this.canvas.addEventListener('touchcancel', this.handleMouseUp.bind(this));
 
         // Control updates
-        this.timeRange.oninput = () => this.render();
-        this.radios.forEach(radio => radio.onchange = () => this.render());
-        this.aMaxRange.oninput = () => this.render();
-        this.animateTrajectory.onclick = () => this.toggleAnimation();
+        this.ui.timeRange.addEventListener('input', () => this.render());
+        this.ui.aMaxRange.addEventListener('input', () => this.render());
+        this.ui.radios.forEach(radio => 
+            radio.addEventListener('change', () => this.render())
+        );
+        this.ui.animateCheckbox.addEventListener('change', () => this.toggleAnimation());
+
+        // Window resize handling
+        window.addEventListener('resize', this.handleResize.bind(this));
+    }
+
+    handleResize() {
+        // Maintain aspect ratio and scale
+        const container = this.canvas.parentElement;
+        const width = container.clientWidth;
+        const height = width;
+
+        this.canvas.style.width = `${width}px`;
+        this.canvas.style.height = `${height}px`;
+        
+        // Update internal canvas dimensions
+        this.canvas.width = width;
+        this.canvas.height = height;
+        
+        this.render();
     }
 
     isNearPoint(pos, point) {
         return new Vec2(pos.x - point.x, pos.y - point.y).length() < 15;
     }
 
-    handleMouseDown(event) {
-        const mousePos = new Vec2(
-            event.pageX - this.canvas.offsetLeft,
-            event.pageY - this.canvas.offsetTop
+    getMousePosition(event) {
+        const rect = this.canvas.getBoundingClientRect();
+        return new Vec2(
+            event.clientX - rect.left,
+            event.clientY - rect.top
         );
+    }
 
-        // Check if clicking near start or end point
-        if (this.isNearPoint(mousePos, this.p_start)) {
-            this.selectedPoint = 'start';
-        } else if (this.isNearPoint(mousePos, this.p_end)) {
-            this.selectedPoint = 'end';
-        }
+    getTouchPosition(touch) {
+        const rect = this.canvas.getBoundingClientRect();
+        return new Vec2(
+            touch.clientX - rect.left,
+            touch.clientY - rect.top
+        );
+    }
 
-        this.drag = true;
-        this.updateClickPos(mousePos.x, mousePos.y);
+    handleMouseDown(event) {
+        const pos = this.getMousePosition(event);
+        this.startDrag(pos);
     }
 
     handleMouseMove(event) {
-        if (this.drag) {
-            this.updateClickPos(
-                event.pageX - this.canvas.offsetLeft,
-                event.pageY - this.canvas.offsetTop
-            );
+        if (this.state.drag) {
+            const pos = this.getMousePosition(event);
+            this.updateDragPosition(pos);
         }
+    }
+
+    handleMouseUp() {
+        this.state.drag = false;
+        this.state.selectedPoint = null;
     }
 
     handleTouchStart(event) {
         event.preventDefault();
         const touch = event.touches[0];
-        const touchPos = new Vec2(
-            touch.pageX - this.canvas.offsetLeft,
-            touch.pageY - this.canvas.offsetTop
-        );
-
-        // Check if touching near start or end point
-        if (this.isNearPoint(touchPos, this.p_start)) {
-            this.selectedPoint = 'start';
-        } else if (this.isNearPoint(touchPos, this.p_end)) {
-            this.selectedPoint = 'end';
-        }
-
-        this.drag = true;
-        this.updateClickPos(touchPos.x, touchPos.y);
+        const pos = this.getTouchPosition(touch);
+        this.startDrag(pos);
     }
 
     handleTouchMove(event) {
         event.preventDefault();
-        if (this.drag) {
+        if (this.state.drag) {
             const touch = event.touches[0];
-            this.updateClickPos(
-                touch.pageX - this.canvas.offsetLeft,
-                touch.pageY - this.canvas.offsetTop
-            );
+            const pos = this.getTouchPosition(touch);
+            this.updateDragPosition(pos);
         }
     }
 
-    updateClickPos(x, y) {
-        const newPos = new Vec2(
-            Math.max(0, Math.min(this.canvas.width, x)),
-            Math.max(0, Math.min(this.canvas.height, y))
-        );
-
-        if (this.selectedPoint === 'start') {
-            this.p_start = newPos;
-        } else if (this.selectedPoint === 'end') {
-            this.p_end = newPos;
-        } else {
-            this.click_pos = newPos;
+    startDrag(pos) {
+        if (this.isNearPoint(pos, this.state.p_start)) {
+            this.state.selectedPoint = 'start';
+        } else if (this.isNearPoint(pos, this.state.p_end)) {
+            this.state.selectedPoint = 'end';
         }
+        this.state.drag = true;
+        this.updateDragPosition(pos);
+    }
 
-        this.render();
+    updateDragPosition(pos) {
+        try {
+            const newPos = new Vec2(
+                Math.max(0, Math.min(this.canvas.width, pos.x)),
+                Math.max(0, Math.min(this.canvas.height, pos.y))
+            );
+
+            if (this.state.selectedPoint === 'start') {
+                this.state.p_start = newPos;
+            } else if (this.state.selectedPoint === 'end') {
+                this.state.p_end = newPos;
+            } else {
+                this.state.click_pos = newPos;
+            }
+
+            this.render();
+        } catch (error) {
+            console.error('Error updating position:', error);
+            this.state.error = error.message;
+            this.render();
+        }
     }
 
     getExperiment() {
-        for (let radio of this.radios) {
+        for (let radio of this.ui.radios) {
             if (radio.checked) return radio.value;
         }
         return 'basic';
     }
 
     getTime() {
-        return this.timeRange.value / 1000;
+        return this.ui.timeRange.value / 1000;
     }
 
     getAMax() {
-        return this.aMaxRange.value / 100;
+        return this.ui.aMaxRange.value / 100;
     }
 
     toggleAnimation() {
-        if (this.animateTrajectory.checked) {
+        if (this.ui.animateCheckbox.checked) {
             this.startAnimation();
         } else {
             this.stopAnimation();
@@ -150,34 +272,44 @@ class TrajectorySimulation {
 
     startAnimation() {
         this.stopAnimation();
-        this.animationInterval = setInterval(() => {
-            this.timeRange.value = (parseInt(this.timeRange.value) + 5) % 1000;
-            this.render();
-        }, 1000 / 60);
+        this.animate();
     }
 
     stopAnimation() {
-        if (this.animationInterval) {
-            clearInterval(this.animationInterval);
-            this.animationInterval = null;
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+            this.animationId = null;
         }
     }
 
+    animate(currentTime) {
+        if (!this.ui.animateCheckbox.checked) return;
+
+        if (!this.lastRenderTime) this.lastRenderTime = currentTime;
+
+        const elapsed = currentTime - this.lastRenderTime;
+
+        if (elapsed > this.frameInterval) {
+            this.ui.timeRange.value = (parseInt(this.ui.timeRange.value) + 5) % 1000;
+            this.render();
+            this.lastRenderTime = currentTime;
+        }
+
+        this.animationId = requestAnimationFrame(this.animate.bind(this));
+    }
+
     drawGrid() {
-        const gridSize = 50;
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        this.ctx.strokeStyle = this.config.colors.grid;
         this.ctx.lineWidth = 1;
 
-        // Draw vertical lines
-        for (let x = 0; x <= this.canvas.width; x += gridSize) {
+        for (let x = 0; x <= this.canvas.width; x += this.config.gridSize) {
             this.ctx.beginPath();
             this.ctx.moveTo(x, 0);
             this.ctx.lineTo(x, this.canvas.height);
             this.ctx.stroke();
         }
 
-        // Draw horizontal lines
-        for (let y = 0; y <= this.canvas.height; y += gridSize) {
+        for (let y = 0; y <= this.canvas.height; y += this.config.gridSize) {
             this.ctx.beginPath();
             this.ctx.moveTo(0, y);
             this.ctx.lineTo(this.canvas.width, y);
@@ -197,7 +329,8 @@ class TrajectorySimulation {
     }
 
     renderPointLine(points, lineColor, pointColor) {
-        // Draw the trajectory line
+        if (points.length < 2) return;
+
         this.ctx.beginPath();
         this.ctx.moveTo(points[0].x, points[0].y);
         for (let i = 1; i < points.length; i++) {
@@ -208,10 +341,9 @@ class TrajectorySimulation {
         this.ctx.stroke();
         this.ctx.closePath();
 
-        // Draw points along the trajectory
         points.forEach((p, i) => {
-            if (i % 5 === 0) { // Draw fewer points for better performance
-                this.renderCircle(p, pointColor, 2);
+            if (i % 5 === 0) {
+                this.renderCircle(p, pointColor, this.config.smallPointRadius);
             }
         });
     }
@@ -233,60 +365,74 @@ class TrajectorySimulation {
     }
 
     renderTrajectory(path) {
-        const n = 50;
-        const points = Array.from({length: n + 1}, (_, i) => {
-            const t = (path.t_max / n) * i;
-            return path.rocketPosition(t);
-        });
+        try {
+            const points = path.getCachedPoints().map(p => p.position);
+            
+            // Render trajectory path
+            this.renderPointLine(points, this.config.colors.trajectory, this.config.colors.points);
 
-        // Render trajectory path
-        this.renderPointLine(points, '#3498db', '#e74c3c');
+            // Render current position
+            const currentTime = this.getTime() * path.t_max;
+            const state = path.getStateAtTime(currentTime);
+            
+            this.renderCircle(state.position, this.config.colors.currentPos, this.config.pointRadius);
 
-        // Render current position
-        const currentTime = this.getTime() * path.t_max;
-        const currentPos = path.rocketPosition(currentTime);
-        this.renderCircle(currentPos, '#2ecc71', 6);
+            // Render velocity vector
+            const velEnd = state.position.add(state.velocity.mul(this.config.vel_scale));
+            this.renderLine(state.position, velEnd, this.config.colors.velocity, 2);
 
-        // Render velocity vector
-        const rocketVel = path.rocketVelocity(currentTime);
-        const velEnd = currentPos.add(rocketVel.mul(this.vel_scale));
-        this.renderLine(currentPos, velEnd, '#f1c40f', 2);
+            // Render start and end points with labels
+            this.renderCircle(this.state.p_start, this.config.colors.start, this.config.pointRadius);
+            this.renderText(this.state.p_start.add(new Vec2(10, -10)), 'Start');
+            
+            this.renderCircle(this.state.p_end, this.config.colors.end, this.config.pointRadius);
+            this.renderText(this.state.p_end.add(new Vec2(10, -10)), 'End');
+            
+            // Render time information
+            this.renderText(new Vec2(10, 30), `Time: ${currentTime.toFixed(2)}s`);
+            this.renderText(new Vec2(10, 60), `Max Time: ${path.t_max.toFixed(2)}s`);
+            this.renderText(new Vec2(10, 90), `Speed: ${state.velocity.length().toFixed(2)} u/s`);
 
-        // Render start and end points with labels
-        this.renderCircle(this.p_start, '#e74c3c', 8);
-        this.renderText(this.p_start.add(new Vec2(10, -10)), 'Start');
-        
-        this.renderCircle(this.p_end, '#3498db', 8);
-        this.renderText(this.p_end.add(new Vec2(10, -10)), 'End');
-        
-        // Render time information
-        this.renderText(new Vec2(10, 30), `Time: ${currentTime.toFixed(2)}s`);
-        this.renderText(new Vec2(10, 60), `Max Time: ${path.t_max.toFixed(2)}s`);
-        this.renderText(new Vec2(10, 90), `Speed: ${rocketVel.length().toFixed(2)} u/s`);
+            // Clear any previous errors
+            this.state.error = null;
+        } catch (error) {
+            console.error('Error rendering trajectory:', error);
+            this.state.error = error.message;
+        }
     }
 
     experimentBasic() {
         const a_max = this.getAMax();
-        const initial_v = this.click_pos.sub(this.p_start).x / this.vel_scale;
-        return new DirectedInitialVFlightPath(this.p_start, this.p_end, a_max, initial_v);
+        const initial_v = this.state.click_pos.sub(this.state.p_start).x / this.config.vel_scale;
+        return new DirectedInitialVFlightPath(this.state.p_start, this.state.p_end, a_max, initial_v);
     }
 
     experimentBetter() {
         const a_max = this.getAMax();
-        const initial_v = this.click_pos.sub(this.p_start).div(this.vel_scale);
-        return new InitialVFlightPath(this.p_start, this.p_end, a_max, initial_v);
+        const initial_v = this.state.click_pos.sub(this.state.p_start).div(this.config.vel_scale);
+        return new InitialVFlightPath(this.state.p_start, this.state.p_end, a_max, initial_v);
     }
 
     experimentMove() {
         const a_max = this.getAMax();
-        if (!this.click_pos.equals(this.p_end)) {
-            const cur_path = new InitialVFlightPath(this.p_start, this.p_end, a_max, this.last_vel);
+        if (!this.state.click_pos.equals(this.state.p_end)) {
+            const cur_path = new InitialVFlightPath(
+                this.state.p_start, 
+                this.state.p_end, 
+                a_max, 
+                this.state.last_vel
+            );
             const currentTime = this.getTime() * cur_path.t_max;
-            this.p_start = cur_path.rocketPosition(currentTime);
-            this.last_vel = cur_path.rocketVelocity(currentTime);
-            this.p_end = this.click_pos;
+            this.state.p_start = cur_path.rocketPosition(currentTime);
+            this.state.last_vel = cur_path.rocketVelocity(currentTime);
+            this.state.p_end = this.state.click_pos;
         }
-        return new InitialVFlightPath(this.p_start, this.p_end, a_max, this.last_vel);
+        return new InitialVFlightPath(
+            this.state.p_start, 
+            this.state.p_end, 
+            a_max, 
+            this.state.last_vel
+        );
     }
 
     render() {
@@ -296,32 +442,58 @@ class TrajectorySimulation {
         // Draw grid
         this.drawGrid();
         
-        // Draw guide line
-        this.renderLine(this.p_start, this.click_pos, '#27ae60', 1);
+        try {
+            // Draw guide line
+            this.renderLine(
+                this.state.p_start, 
+                this.state.click_pos, 
+                '#27ae60', 
+                1
+            );
 
-        // Render appropriate experiment
-        const experiment = this.getExperiment();
-        let path;
-        
-        switch (experiment) {
-            case 'basic':
-                path = this.experimentBasic();
-                break;
-            case 'better':
-                path = this.experimentBetter();
-                break;
-            case 'move':
-                path = this.experimentMove();
-                break;
-            default:
-                path = this.experimentBasic();
+            // Render appropriate experiment
+            const experiment = this.getExperiment();
+            let path;
+            
+            switch (experiment) {
+                case 'basic':
+                    path = this.experimentBasic();
+                    break;
+                case 'better':
+                    path = this.experimentBetter();
+                    break;
+                case 'move':
+                    path = this.experimentMove();
+                    break;
+                default:
+                    path = this.experimentBasic();
+            }
+
+            this.renderTrajectory(path);
+
+            // Render any error messages
+            if (this.state.error) {
+                this.ctx.fillStyle = 'red';
+                this.ctx.fillText(`Error: ${this.state.error}`, 10, this.canvas.height - 20);
+            }
+        } catch (error) {
+            console.error('Error in render:', error);
+            this.ctx.fillStyle = 'red';
+            this.ctx.fillText(`Error: ${error.message}`, 10, this.canvas.height - 20);
         }
-
-        this.renderTrajectory(path);
     }
 }
 
 // Initialize simulation when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new TrajectorySimulation();
+    try {
+        new TrajectorySimulation();
+    } catch (error) {
+        console.error('Failed to initialize simulation:', error);
+        document.body.innerHTML = `
+            <div style="color: red; padding: 20px;">
+                Failed to initialize simulation: ${error.message}
+            </div>
+        `;
+    }
 });
